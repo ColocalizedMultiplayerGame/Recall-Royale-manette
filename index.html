@@ -16,21 +16,27 @@ const urlParams = new URLSearchParams(window.location.search);
 const serverParam = urlParams.get('server');
 const roomParam = urlParams.get('room') ? urlParams.get('room').toUpperCase() : '';
 
-// Affichage du code room dans le titre du lobby s'il existe
-if (roomParam) {
-  document.getElementById('lobby-room-title').textContent = `CTRL//PAD [${roomParam}]`;
+// CORRECTION SÉCURISÉE : On vérifie si l'élément existe avant de changer son texte
+const roomTitleEl = document.getElementById('lobby-room-title') || document.querySelector('.lobby-title');
+if (roomTitleEl && roomParam) {
+  roomTitleEl.textContent = `CTRL//PAD [${roomParam}]`;
 }
 
 // ── Screen helper ──────────────────────────────────────────
 function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const targetScreen = document.getElementById(id);
+  if (targetScreen) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    targetScreen.classList.add('active');
+  }
 }
 
 const tutorialHint = document.getElementById('tutorial-hint');
 function showTutorialHint(text) {
-  tutorialHint.textContent = text || '';
-  tutorialHint.style.display = text ? 'block' : 'none';
+  if (tutorialHint) {
+    tutorialHint.textContent = text || '';
+    tutorialHint.style.display = text ? 'block' : 'none';
+  }
 }
 
 // ── Lobby ──────────────────────────────────────────────────
@@ -53,50 +59,71 @@ function applyThemeColor(hex) {
   root.style.setProperty('--cyan', hex);
 }
 
-colorInput.addEventListener('input', () => {
-  playerColor = colorInput.value;
-  applyThemeColor(playerColor);
-});
+// Sécurisation des écouteurs d'événements pour éviter les plantages si le HTML change
+if (colorInput) {
+  colorInput.addEventListener('input', () => {
+    playerColor = colorInput.value;
+    applyThemeColor(playerColor);
+  });
+}
 
-nameInput.addEventListener('input', () => {
-  joinBtn.disabled = nameInput.value.trim().length === 0;
-});
-nameInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !joinBtn.disabled) joinGame();
-});
-joinBtn.addEventListener('click', joinGame);
+if (nameInput && joinBtn) {
+  nameInput.addEventListener('input', () => {
+    joinBtn.disabled = nameInput.value.trim().length === 0;
+  });
+  
+  nameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !joinBtn.disabled) joinGame();
+  });
+}
+
+if (joinBtn) {
+  joinBtn.addEventListener('click', joinGame);
+}
 
 function joinGame() {
+  if (!nameInput) return;
   playerName = nameInput.value.trim();
   if (!playerName) return;
-  playerColor = colorInput.value || '#7c3aed';
+  
+  playerColor = (colorInput ? colorInput.value : '#7c3aed');
   applyThemeColor(playerColor);
-  document.getElementById('player-label').textContent  = playerName.toUpperCase();
-  document.getElementById('waiting-label').textContent = playerName.toUpperCase();
+  
+  const pLabel = document.getElementById('player-label');
+  const wLabel = document.getElementById('waiting-label');
+  if (pLabel) pLabel.textContent = playerName.toUpperCase();
+  if (wLabel) wLabel.textContent = playerName.toUpperCase();
+  
   showScreen('game');
   initJoystick();
-  connect(); // On se connecte UNIQUEMENT quand on clique sur rejoindre
+  connect();
 }
 
 // ── Joystick ───────────────────────────────────────────────
 let joyInited = false;
 function initJoystick() {
   if (joyInited) return;
+  
+  // On s'assure que la div du joystick existe bel et bien
+  if (!document.getElementById('joyDiv')) return;
+  
   joyInited = true;
   const stroke = darkenHex(playerColor, 0.45);
+  
   new JoyStick('joyDiv', {
     internalFillColor: playerColor, internalStrokeColor: stroke,
     externalStrokeColor: '#2d2d4e', autoReturnToCenter: true
   }, function(s) {
     joyX = parseInt(s.x); joyY = parseInt(s.y);
-    document.getElementById('disp-x').textContent = joyX;
-    document.getElementById('disp-y').textContent = joyY;
+    const dispX = document.getElementById('disp-x');
+    const dispY = document.getElementById('disp-y');
+    if (dispX) dispX.textContent = joyX;
+    if (dispY) dispY.textContent = joyY;
   });
 }
 
 // ── WebSocket ──────────────────────────────────────────────
 function getWsUrl() {
-  // CORRECTION : On utilise ton TOUT NOUVEAU serveur par défaut !
   return serverParam || 'wss://recall-royale-server-xqz6.onrender.com';
 }
 
@@ -104,8 +131,8 @@ const dotEl    = document.getElementById('dot');
 const statusEl = document.getElementById('status-text');
 
 function setStatus(s) {
-  dotEl.classList.toggle('on', s === 'connected');
-  statusEl.textContent = s === 'connected' ? 'ONLINE' : s === 'connecting' ? 'CONNECTING…' : 'OFFLINE';
+  if (dotEl) dotEl.classList.toggle('on', s === 'connected');
+  if (statusEl) statusEl.textContent = s === 'connected' ? 'ONLINE' : s === 'connecting' ? 'CONNECTING…' : 'OFFLINE';
 }
 
 function connect() {
@@ -114,9 +141,8 @@ function connect() {
   
   ws.onopen = () => {
     setStatus('connected');
-    console.log(`📡 Connecté au serveur relais. Envoi du registre pour la room: ${roomParam}`);
+    console.log(`📡 Connecté au serveur relais. Room: ${roomParam}`);
     
-    // CORRECTION : Le format d'envoi correspond EXACTEMENT à ce que ton serveur Node.js attend
     ws.send(JSON.stringify({ 
       type: 'register', 
       role: 'controller', 
@@ -141,6 +167,12 @@ function connect() {
 // ── Handle messages from Godot ─────────────────────────────
 function handleServerMessage(msg) {
   console.log('📨 Received:', msg.type, msg);
+  
+  const sabConfirm = document.getElementById('sab-confirm');
+  const sabTitle = document.getElementById('sab-title');
+  const sabSub = document.getElementById('sab-sub');
+  const lobbyScreen = document.getElementById('lobby');
+
   switch (msg.type) {
     case 'assign_id':
       console.log('✅ Assigned player ID:', msg.id);
@@ -162,24 +194,24 @@ function handleServerMessage(msg) {
     case 'tutorial_sabotage_start':
       tutorialMode = 'sabotage';
       sabChosen = null;
-      document.getElementById('sab-confirm').textContent = '';
-      document.getElementById('sab-title').textContent = 'EXERCICE SABOTAGE';
-      document.getElementById('sab-sub').innerHTML = 'Choisis n\'importe quelle case.<br/>Cet exercice n\'active aucun piège.';
+      if (sabConfirm) sabConfirm.textContent = '';
+      if (sabTitle) sabTitle.textContent = 'EXERCICE SABOTAGE';
+      if (sabSub) sabSub.innerHTML = 'Choisis n\'importe quelle case.<br/>Cet exercice n\'active aucun piège.';
       buildSaboteurGrid(msg.tiles || [], msg.cols || GRID_COLS, msg.rows || GRID_ROWS);
       showScreen('saboteur-grid-screen');
       showTutorialHint('Tutoriel: tape une case pour valider');
       break;
 
     case 'tutorial_sabotage_ack':
-      document.getElementById('sab-confirm').textContent = 'Exercice validé (piège non actif)';
+      if (sabConfirm) sabConfirm.textContent = 'Exercice validé (piège non actif)';
       break;
 
     case 'tutorial_clear':
       tutorialMode = '';
-      document.getElementById('sab-title').textContent = 'FAIS TOMBER UNE CASE !';
-      document.getElementById('sab-sub').innerHTML = 'Cases <span style="color:#f59e0b">⭐ jaunes</span> = bonnes réponses.<br/>Choisis-en une pour la sabotager !';
+      if (sabTitle) sabTitle.textContent = 'FAIS TOMBER UNE CASE !';
+      if (sabSub) sabSub.innerHTML = 'Cases <span style="color:#f59e0b">⭐ jaunes</span> = bonnes réponses.<br/>Choisis-en une pour la sabotager !';
       showTutorialHint('');
-      if (!document.getElementById('lobby').classList.contains('active')) {
+      if (lobbyScreen && !lobbyScreen.classList.contains('active')) {
         showScreen('game');
       }
       break;
@@ -190,7 +222,7 @@ function handleServerMessage(msg) {
 
     case 'you_are_saboteur':
       sabChosen = null;
-      document.getElementById('sab-confirm').textContent = '';
+      if (sabConfirm) sabConfirm.textContent = '';
       showScreen('saboteur-announced');
       break;
 
@@ -201,7 +233,7 @@ function handleServerMessage(msg) {
 
     case 'saboteur_reset':
       sabChosen = null;
-      document.getElementById('sab-confirm').textContent = '';
+      if (sabConfirm) sabConfirm.textContent = '';
       showScreen('waiting');
       break;
     
@@ -222,6 +254,8 @@ function buildSaboteurGrid(correctTiles, cols, rows) {
   GRID_ROWS = rows;
 
   const grid = document.getElementById('sab-grid');
+  if (!grid) return;
+  
   grid.innerHTML = '';
   grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
 
@@ -272,15 +306,16 @@ function onTilePick(e) {
     }
   });
 
+  const sabConfirm = document.getElementById('sab-confirm');
   if (tutorialMode === 'sabotage') {
-    document.getElementById('sab-confirm').textContent = 'Exercice validé (piège non actif)';
+    if (sabConfirm) sabConfirm.textContent = 'Exercice validé (piège non actif)';
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'tutorial_sabotage_tap', gx, gy }));
     }
     return;
   }
 
-  document.getElementById('sab-confirm').textContent = `CASE (${gx},${gy}) SABOTÉE !`;
+  if (sabConfirm) sabConfirm.textContent = `CASE (${gx},${gy}) SABOTÉE !`;
 
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'saboteur_choice', gx, gy }));
